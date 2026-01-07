@@ -153,7 +153,7 @@ public class KymoButler_JSON_parser implements PlugIn{
 	 * Displays the GUI, stores the parameters and launches the analysis
 	 */
 	public void showGUI() {
-		GenericDialog gd=new GenericDialog("KymoButler for IJ by fabrice.cordelieres@gmail.com");
+		GenericDialog gd=new GenericDialog("KymoButler for ImageJ");
 		gd.addCheckbox("Add to manager", addToManager);
 		gd.addCheckbox("Simplify tracks", simplifyTracks);
 		gd.addCheckbox("Clear manager before adding", clearManager);

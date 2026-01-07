@@ -82,8 +82,8 @@ public class KymoButlerResponseParser {
 	 * @return true or false depending on if the content seems to be JSON or not
 	 */
 	public static boolean isJSON(String JSONContent) {
-		return JSONContent.startsWith("{\n" + 
-				"	\"");	
+		if(JSONContent==null) return false;
+		return JSONContent.trim().startsWith("{");
 	}
 	
 	/**

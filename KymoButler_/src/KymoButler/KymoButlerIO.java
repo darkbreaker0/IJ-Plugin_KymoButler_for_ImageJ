@@ -24,11 +24,14 @@
 package KymoButler;
 
 import java.awt.Polygon;
+import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.concurrent.TimeUnit;
 
 import javax.imageio.ImageIO;
 
@@ -48,6 +51,7 @@ import ij.ImagePlus;
 import ij.Prefs;
 import ij.WindowManager;
 import ij.gui.Roi;
+import ij.io.FileInfo;
 import ij.plugin.frame.RoiManager;
 
 /**
@@ -60,8 +64,42 @@ public class KymoButlerIO{
 	/** KymoButler API URL **/
 	String URL=Prefs.get("KymoButler_URL.string", "");
 	
+	/** Use local Wolfram Engine **/
+	boolean useLocal=Prefs.get("KymoButler_useLocal.boolean", true);
+	
+	/** WolframScript path **/
+	String wolframScriptPath=Prefs.get("KymoButler_wolframscript.string", "wolframscript");
+	
+	/** Local KymoButler path **/
+	String localKymoButlerPath=Prefs.get("KymoButler_localPath.string", "");
+	
+	/** Local output directory **/
+	String localOutputDir=Prefs.get("KymoButler_outputDir.string", System.getProperty("java.io.tmpdir"));
+
+	/** Target device **/
+	String targetDevice=Prefs.get("KymoButler_targetDevice.string", "GPU");
+	
+	/** Use bidirectional model **/
+	boolean useBidirectional=Prefs.get("KymoButler_useBidirectional.boolean", false);
+	
+	/** Bidirectional decision threshold **/
+	double decisionThreshold=Prefs.get("KymoButler_decisionThreshold.double", 0.5);
+	
+	/** Use physical units in postprocessing **/
+	boolean pprocUsePhysical=Prefs.get("KymoButler_pprocUsePhysical.boolean", true);
+	
 	//Image to be processed, as a byte array
 	byte[] img=null;
+	
+	/** Current image for local processing **/
+	ImagePlus currentImage=null;
+	
+	/** Local output directory used by last run **/
+	String lastOutputDir=null;
+	
+	/** Local processing calibration **/
+	double timeSize=1.0;
+	double spaceSize=1.0;
 	
 	//Parameter p (Threshold), default value 0.2
 	String p="0.2";
@@ -134,6 +172,12 @@ public class KymoButlerIO{
 	 * @param ip an ImagePlus containing the kymograph to analyse
 	 */
 	public void setKymograph(ImagePlus ip) {
+		currentImage=ip;
+		if(ip!=null && ip.getCalibration()!=null) {
+			if(ip.getCalibration().frameInterval>0) timeSize=ip.getCalibration().frameInterval;
+			if(ip.getCalibration().pixelWidth>0) spaceSize=ip.getCalibration().pixelWidth;
+		}
+		updateOutputDirFromImage(ip);
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		try {
 			boolean isVisible=ip.isVisible();
@@ -293,6 +337,8 @@ public class KymoButlerIO{
 	 * @return a String JSON formatted, containing the response (two images, kymograph and overlay, and the tracks as a CSV-style file)
 	 */
 	public String getAnalysisResults() {
+		refreshLocalPrefs();
+		if(useLocal) return getAnalysisResultsLocal();
 		MultipartEntityBuilder builder=MultipartEntityBuilder.create()
 				.setMode(HttpMultipartMode.BROWSER_COMPATIBLE)
 				.addTextBody(KymoButlerFields.QUERY_FIELD_TAG, KymoButlerFields.QUERY_ANALYSIS_FIELD_TAG)
@@ -327,6 +373,127 @@ public class KymoButlerIO{
 			//e.printStackTrace();
 		}
 		return null;
+	}
+
+	/**
+	 * Returns true if local processing is enabled.
+	 * @return true if local processing is enabled.
+	 */
+	public boolean isLocalMode() {
+		refreshLocalPrefs();
+		return useLocal;
+	}
+	
+	/**
+	 * Returns the output directory used during the last local run.
+	 * @return the last output directory, or null if none was used.
+	 */
+	public String getLastOutputDir() {
+		return lastOutputDir;
+	}
+	
+	public String getLastTracksCsvPath() {
+		if(lastOutputDir==null) return null;
+		return new File(lastOutputDir, sanitizeBaseName(currentImage!=null?currentImage.getTitle():"kymograph")+"_tracks_long.csv").getAbsolutePath();
+	}
+	
+	public String getLastPprocTablePath() {
+		if(lastOutputDir==null) return null;
+		return new File(lastOutputDir, sanitizeBaseName(currentImage!=null?currentImage.getTitle():"kymograph")+"_pproc_table.csv").getAbsolutePath();
+	}
+
+	/**
+	 * Runs the analysis locally using Wolfram Engine.
+	 * @return a JSON string compatible with KymoButlerResponseParser, or null on failure.
+	 */
+	public String getAnalysisResultsLocal() {
+		if(currentImage==null) {
+			IJ.log("Local mode: no image set for analysis.");
+			return null;
+		}
+		
+		if(localKymoButlerPath==null || localKymoButlerPath.trim().isEmpty()) {
+			localKymoButlerPath=guessLocalKymoPath();
+		}
+		
+		if(localKymoButlerPath==null || localKymoButlerPath.trim().isEmpty()) {
+			IJ.log("Local mode: KymoButler local path is not set.");
+			return null;
+		}
+		
+		File packageFile=new File(localKymoButlerPath, "packages"+File.separator+"KymoButler.wl");
+		if(!packageFile.exists()) {
+			IJ.log("Local mode: KymoButler.wl not found at "+packageFile.getAbsolutePath());
+			return null;
+		}
+		
+		updateOutputDirFromImage(currentImage);
+		String timeStamp=new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
+		String baseName=sanitizeBaseName(currentImage.getTitle());
+		File sessionDir=new File(localOutputDir, "KymoButlerLocal_"+timeStamp+"_"+baseName);
+		if(!sessionDir.exists() && !sessionDir.mkdirs()) {
+			IJ.log("Local mode: unable to create output directory "+sessionDir.getAbsolutePath());
+			return null;
+		}
+		
+		String inputPath=new File(sessionDir, baseName+"_input.png").getAbsolutePath();
+		String responsePath=new File(sessionDir, baseName+"_response.json").getAbsolutePath();
+		String overlayPath=new File(sessionDir, baseName+"_overlay.tif").getAbsolutePath();
+		String tracksCsvPath=new File(sessionDir, baseName+"_tracks_long.csv").getAbsolutePath();
+		String pprocTablePath=new File(sessionDir, baseName+"_pproc_table.csv").getAbsolutePath();
+		String pprocHistVPath=new File(sessionDir, baseName+"_pproc_hist_v.png").getAbsolutePath();
+		String pprocHistTPath=new File(sessionDir, baseName+"_pproc_hist_t.png").getAbsolutePath();
+		String pprocHistDistPath=new File(sessionDir, baseName+"_pproc_hist_dist.png").getAbsolutePath();
+		String scriptPath=new File(sessionDir, baseName+"_local.wls").getAbsolutePath();
+		
+		try {
+			ImageIO.write(currentImage.getBufferedImage(), "png", new File(inputPath));
+		} catch (IOException e) {
+			IJ.log("Local mode: unable to write input image to "+inputPath);
+			return null;
+		}
+		
+		String script=buildLocalScript(inputPath, responsePath, overlayPath, tracksCsvPath,
+				pprocTablePath, pprocHistVPath, pprocHistTPath, pprocHistDistPath);
+		
+		try {
+			FileUtils.writeStringToFile(new File(scriptPath), script, "UTF-8");
+		} catch (IOException e) {
+			IJ.log("Local mode: unable to write WolframScript file to "+scriptPath);
+			return null;
+		}
+		
+		lastOutputDir=sessionDir.getAbsolutePath();
+		
+		ProcessBuilder pb=new ProcessBuilder(wolframScriptPath, "-file", scriptPath);
+		pb.redirectErrorStream(true);
+		
+		startTime=System.currentTimeMillis();
+		Process proc=null;
+		try {
+			proc=pb.start();
+			logProcessOutput(proc);
+			boolean finished=proc.waitFor(timeOut, TimeUnit.MILLISECONDS);
+			if(!finished) {
+				proc.destroyForcibly();
+				IJ.log("Local mode: process timed out.");
+				return null;
+			}
+		} catch (IOException | InterruptedException e) {
+			IJ.log("Local mode: failed to run WolframScript.");
+			return null;
+		}
+		
+		if(proc.exitValue()!=0) {
+			IJ.log("Local mode: WolframScript returned a non-zero status.");
+		}
+		
+		try {
+			return FileUtils.readFileToString(new File(responsePath), "UTF-8");
+		} catch (IOException e) {
+			IJ.log("Local mode: unable to read response file "+responsePath);
+			return null;
+		}
 	}
 	
 	/**
@@ -420,6 +587,147 @@ public class KymoButlerIO{
 		Date elapsedTime=new Date(System.currentTimeMillis()-startTime);
 		SimpleDateFormat sdf=new SimpleDateFormat("mm:ss");
 		return sdf.format(elapsedTime);
+	}
+
+	private void refreshLocalPrefs() {
+		useLocal=Prefs.get("KymoButler_useLocal.boolean", true);
+		wolframScriptPath=Prefs.get("KymoButler_wolframscript.string", "wolframscript");
+		localKymoButlerPath=Prefs.get("KymoButler_localPath.string", "");
+		localOutputDir=Prefs.get("KymoButler_outputDir.string", System.getProperty("java.io.tmpdir"));
+		targetDevice=Prefs.get("KymoButler_targetDevice.string", "GPU");
+		useBidirectional=Prefs.get("KymoButler_useBidirectional.boolean", false);
+		decisionThreshold=Prefs.get("KymoButler_decisionThreshold.double", 0.5);
+		pprocUsePhysical=Prefs.get("KymoButler_pprocUsePhysical.boolean", true);
+		updateOutputDirFromImage(currentImage);
+	}
+	
+	private String buildLocalScript(String inputPath, String responsePath, String overlayPath, String tracksCsvPath,
+			String pprocTablePath, String pprocHistVPath, String pprocHistTPath, String pprocHistDistPath) {
+		StringBuilder sb=new StringBuilder();
+		
+		sb.append("$HistoryLength=0;\n");
+		sb.append("kbPath=\"").append(escapeForWolfram(localKymoButlerPath)).append("\";\n");
+		sb.append("inputPath=\"").append(escapeForWolfram(inputPath)).append("\";\n");
+		sb.append("responsePath=\"").append(escapeForWolfram(responsePath)).append("\";\n");
+		sb.append("overlayPath=\"").append(escapeForWolfram(overlayPath)).append("\";\n");
+		sb.append("tracksCsvPath=\"").append(escapeForWolfram(tracksCsvPath)).append("\";\n");
+		sb.append("pprocTablePath=\"").append(escapeForWolfram(pprocTablePath)).append("\";\n");
+		sb.append("pprocHistVPath=\"").append(escapeForWolfram(pprocHistVPath)).append("\";\n");
+		sb.append("pprocHistTPath=\"").append(escapeForWolfram(pprocHistTPath)).append("\";\n");
+		sb.append("pprocHistDistPath=\"").append(escapeForWolfram(pprocHistDistPath)).append("\";\n");
+		sb.append("p=").append(p).append(";\n");
+		sb.append("minSz=").append(minimumSize).append(";\n");
+		sb.append("minFr=").append(minimumFrames).append(";\n");
+		sb.append("tsz=").append(timeSize).append(";\n");
+		sb.append("xsz=").append(spaceSize).append(";\n");
+		sb.append("useBi=").append(useBidirectional ? "True" : "False").append(";\n");
+		sb.append("vthr=").append(decisionThreshold).append(";\n");
+		sb.append("usePhys=").append(pprocUsePhysical ? "True" : "False").append(";\n");
+		sb.append("device=\"").append(escapeForWolfram(targetDevice)).append("\";\n");
+		sb.append("Get[FileNameJoin[{kbPath,\"packages\",\"KymoButler.wl\"}]];\n");
+		sb.append("Get[FileNameJoin[{kbPath,\"packages\",\"KymoButlerPProc.wl\"}]];\n");
+		sb.append("models=Quiet[loadDefaultNets[kbPath]];\n");
+		sb.append("kym=Import[inputPath];\n");
+		sb.append("res=If[useBi,\n");
+		sb.append("  BiKymoButler[kym, p, vthr, device, models[\"binet\"], models[\"decnet\"], minSz, minFr],\n");
+		sb.append("  UniKymoButler[kym, p, device, models[\"uninet\"], minSz, minFr]\n");
+		sb.append("];\n");
+		sb.append("If[res===$Failed || Head[res]=!=List,\n");
+		sb.append("  Export[responsePath, ExportString[<|\"error\"->True,\"messages\"->\"Local KymoButler processing failed.\"|>,\"JSON\"],\"String\"]; Exit[1];\n");
+		sb.append("];\n");
+		sb.append("overlay=res[[3]];\n");
+		sb.append("If[useBi,\n");
+		sb.append("  tracks=res[[5]];\n");
+		sb.append("  antrks={}; retrks={};,\n");
+		sb.append("  antrks=res[[5]];\n");
+		sb.append("  retrks=res[[6]];\n");
+		sb.append("  tracks=Join[antrks,retrks];\n");
+		sb.append("];\n");
+		sb.append("Export[overlayPath, overlay];\n");
+		sb.append("makeRows[trks_, dir_, startId_]:=Module[{rows={}, tid=startId},\n");
+		sb.append("  Do[rows=Join[rows, Map[{tid, #[[1]], #[[2]], dir} &, trk]]; tid++, {trk, trks}];\n");
+		sb.append("  {rows, tid}\n");
+		sb.append("];\n");
+		sb.append("If[useBi,\n");
+		sb.append("  {rowsA,nextId}=makeRows[tracks, \"bidirectional\", 1];\n");
+		sb.append("  rows=rowsA;,\n");
+		sb.append("  {rowsA,nextId}=makeRows[antrks, \"anterograde\", 1];\n");
+		sb.append("  {rowsR,nextId2}=makeRows[retrks, \"retrograde\", nextId];\n");
+		sb.append("  rows=Join[rowsA, rowsR];\n");
+		sb.append("];\n");
+		sb.append("rows=Map[Append[#, #[[2]]*tsz]&, rows];\n");
+		sb.append("rows=Map[Append[#, #[[3]]*xsz]&, rows];\n");
+		sb.append("rows=Join[{{\"track_id\",\"t\",\"x\",\"dir\",\"t_phys\",\"x_phys\"}}, rows];\n");
+		sb.append("Export[tracksCsvPath, rows];\n");
+		sb.append("If[!usePhys, tsz=1; xsz=1;];\n");
+		sb.append("pp=pprocLocal[tracks, tsz, xsz];\n");
+		sb.append("Export[pprocTablePath, pp[[2]]];\n");
+		sb.append("Export[pprocHistVPath, pp[[1,1]]];\n");
+		sb.append("Export[pprocHistTPath, pp[[1,2]]];\n");
+		sb.append("Export[pprocHistDistPath, pp[[1,3]]];\n");
+		sb.append("kymoData=ImageData[ColorConvert[res[[1]], \"Grayscale\"]];\n");
+		sb.append("overlayData=ImageData[ColorConvert[overlay, \"RGB\"]];\n");
+		sb.append("json=ExportString[<|\"Kymograph\"->kymoData,\"overlay\"->overlayData,\"tracks\"->tracks|>,\"JSON\"];\n");
+		sb.append("Export[responsePath, json, \"String\"];\n");
+		
+		return sb.toString();
+	}
+	
+	private void logProcessOutput(Process proc) {
+		try (BufferedReader reader=new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
+			String line;
+			while((line=reader.readLine())!=null) {
+				if(!line.trim().isEmpty()) IJ.log(line);
+			}
+		} catch (IOException e) {
+			// ignore logging errors
+		}
+	}
+	
+	private String sanitizeBaseName(String title) {
+		if(title==null || title.trim().isEmpty()) return "kymograph";
+		String base=title;
+		int dot=base.lastIndexOf(".");
+		if(dot>0) base=base.substring(0, dot);
+		return base.replaceAll("[^A-Za-z0-9._-]", "_");
+	}
+	
+	private String escapeForWolfram(String path) {
+		if(path==null) return "";
+		return path.replace("\\", "\\\\").replace("\"", "\\\"");
+	}
+	
+	private void updateOutputDirFromImage(ImagePlus ip) {
+		if(ip==null) return;
+		FileInfo info=ip.getOriginalFileInfo();
+		if(info!=null && info.directory!=null && !info.directory.trim().isEmpty()) {
+			localOutputDir=info.directory;
+		}
+	}
+	
+	public static String guessLocalKymoPath() {
+		String env=System.getenv("KYMOBUTLER_PATH");
+		if(env!=null && !env.trim().isEmpty()) {
+			if(new File(env, "packages"+File.separator+"KymoButler.wl").exists()) return env;
+		}
+		
+		String userHome=System.getProperty("user.home");
+		String[] candidates=new String[] {
+			userHome+File.separator+"KymoButler",
+			userHome+File.separator+"KymoButler-master",
+			userHome+File.separator+"Desktop"+File.separator+"KymoButler",
+			userHome+File.separator+"Desktop"+File.separator+"KymoButler-master",
+			userHome+File.separator+"Desktop"+File.separator+"Apps"+File.separator+"KymoButler-master"+File.separator+"KymoButler-master",
+			IJ.getDirectory("imageJ")+File.separator+"KymoButler"
+		};
+		
+		for(String candidate : candidates) {
+			if(candidate==null) continue;
+			File pkg=new File(candidate, "packages"+File.separator+"KymoButler.wl");
+			if(pkg.exists()) return candidate;
+		}
+		
+		return "";
 	}
 	
 	/**

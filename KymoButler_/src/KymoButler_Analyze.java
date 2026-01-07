@@ -33,6 +33,8 @@ import ij.WindowManager;
 import ij.gui.GenericDialog;
 import ij.gui.WaitForUserDialog;
 import ij.measure.Calibration;
+import ij.measure.ResultsTable;
+import ij.io.DirectoryChooser;
 import ij.plugin.PlugIn;
 
 /**
@@ -41,8 +43,8 @@ import ij.plugin.PlugIn;
  *
  */
 public class KymoButler_Analyze implements PlugIn{
-	/** KymoButler API URL **/
-	String URL=Prefs.get("KymoButler_URL.string", "");
+	/** Use local Wolfram Engine **/
+	boolean useLocal=Prefs.get("KymoButler_useLocal.boolean", true);
 	
 	/** The ImagePlus that is present at startup (or null) **/
 	ImagePlus ip=null;
@@ -58,6 +60,33 @@ public class KymoButler_Analyze implements PlugIn{
 	
 	/** Preferences: minimumFrames **/
 	float minimumFrames=(float) Prefs.get("KymoButler_minimumFrames.double", kbio.getMinimumFrames());
+	
+	/** Preferences: use bidirectional model **/
+	boolean useBidirectional=Prefs.get("KymoButler_useBidirectional.boolean", false);
+	
+	/** Preferences: bidirectional decision threshold **/
+	float decisionThreshold=(float) Prefs.get("KymoButler_decisionThreshold.double", 0.5);
+	
+	/** Preferences: open local tables **/
+	boolean openLocalTables=Prefs.get("KymoButler_openLocalTables.boolean", true);
+	
+	/** Preferences: batch mode **/
+	boolean batchMode=Prefs.get("KymoButler_batchMode.boolean", false);
+	
+	/** Preferences: batch recursive **/
+	boolean batchRecursive=Prefs.get("KymoButler_batchRecursive.boolean", true);
+	
+	/** Preferences: show outputs during batch **/
+	boolean batchShowOutputs=Prefs.get("KymoButler_batchShowOutputs.boolean", false);
+	
+	/** Preferences: Improve Kymo before analysis **/
+	boolean improveBeforeAnalysis=Prefs.get("KymoButler_improveBeforeAnalysis.boolean", false);
+	
+	/** Preferences: Improve Kymo start **/
+	int improveStart=(int) Prefs.get("KymoButler_improveStart.double", 1);
+	
+	/** Preferences: Improve Kymo stop **/
+	int improveStop=(int) Prefs.get("KymoButler_improveStop.double", 15);
 	
 	/** Preferences: addToManager **/
 	boolean addToManager=Prefs.get("KymoButler_addToManager.boolean", true);
@@ -98,15 +127,7 @@ public class KymoButler_Analyze implements PlugIn{
 	public void run(String arg) {
 		ip=WindowManager.getCurrentImage();
 		if(KymoButlerIO.checkForLibraries()) {
-			if(!URL.isEmpty()) {	
-				if(ip!=null) {
-					showGUI();
-				}else {
-					IJ.showMessage("Nothing to do, please open an image first");
-				}
-				}else {
-					IJ.showMessage("No URL found for the API: please set one under the KymoButler/Options menu");
-				}
+			showGUI();
 		}else {
 			IJ.showStatus("Installation of the required libraries needs to be done");	
 		}
@@ -116,25 +137,31 @@ public class KymoButler_Analyze implements PlugIn{
 	 * Displays the GUI, stores the parameters and launches the analysis
 	 */
 	public void showGUI() {
-		GenericDialog gd=new GenericDialog("KymoButler for IJ by fabrice.cordelieres@gmail.com");
-		gd.addMessage("<html><b><u>Parameters</u></b</html>");
+		GenericDialog gd=new GenericDialog("KymoButler for ImageJ");
+		gd.addMessage("Parameters");
 		gd.addNumericField("Threshold (default: 0.2)", p, 2);
 		gd.addNumericField("Minimum_size (default: 3)", minimumSize, 0);
 		gd.addNumericField("Minimum_frames (default: 3)", minimumFrames, 0);
+		gd.addCheckbox("Use_bidirectional_model", useBidirectional);
+		gd.addNumericField("Bidirectional_decision_threshold (default: 0.5)", decisionThreshold, 2);
 		
 		gd.addMessage("");
 		
-		gd.addMessage("<html><b><u>Output</u></b</html>");
+		gd.addMessage("Output");
 		gd.addCheckbox("Add to manager", addToManager);
 		gd.addCheckbox("Simplify tracks", simplifyTracks);
 		gd.addCheckbox("Clear manager before adding", clearManager);
 		gd.addCheckbox("Show_kymograph", showKymo);
 		gd.addCheckbox("Show_overlay", showOverlay);
-		gd.addCheckbox("Allow_corrections", allowCorrections);
+		gd.addCheckbox("Open_local_output_tables", openLocalTables);
+		gd.addCheckbox("Batch_mode (folder)", batchMode);
+		gd.addCheckbox("Batch_include_subfolders", batchRecursive);
+		gd.addCheckbox("Batch_show_outputs", batchShowOutputs);
+		gd.addCheckbox("Improve_kymo_before_analysis", improveBeforeAnalysis);
+		gd.addNumericField("Improve_start", improveStart, 0);
+		gd.addNumericField("Improve_stop", improveStop, 0);
 		
-		gd.addMessage("<html><p style=\"color:#FF0000\";><b><u>Note</u></b>: By using this plugin, you agree your image<br>"
-													  + "will be pushed to the <b>KymoButler</b> server and might<br>"
-													  + "be used anonymously for software improvements</p></html>");
+		gd.addMessage("Note: Local processing uses Wolfram Engine on your machine.");
 		
 		gd.addHelp(helpMsg);
 		gd.showDialog();
@@ -143,17 +170,34 @@ public class KymoButler_Analyze implements PlugIn{
 			p=(float) gd.getNextNumber();
 			minimumSize=(float) gd.getNextNumber();
 			minimumFrames=(float) gd.getNextNumber();
+			useBidirectional=gd.getNextBoolean();
+			decisionThreshold=(float) gd.getNextNumber();
 			
 			addToManager=gd.getNextBoolean();
 			simplifyTracks=gd.getNextBoolean();
 			clearManager=gd.getNextBoolean();
 			showKymo=gd.getNextBoolean();
 			showOverlay=gd.getNextBoolean();
-			allowCorrections=gd.getNextBoolean();
+			openLocalTables=gd.getNextBoolean();
+			batchMode=gd.getNextBoolean();
+			batchRecursive=gd.getNextBoolean();
+			batchShowOutputs=gd.getNextBoolean();
+			improveBeforeAnalysis=gd.getNextBoolean();
+			improveStart=(int) gd.getNextNumber();
+			improveStop=(int) gd.getNextNumber();
 			
 			storePreferences();
 			
-			runAnalysis();
+			if(!batchMode && ip==null) {
+				IJ.showMessage("Nothing to do, please open an image first");
+				return;
+			}
+			
+			if(batchMode) {
+				runBatch();
+			}else {
+				runAnalysis();
+			}
 		}
 	}
 	
@@ -164,12 +208,21 @@ public class KymoButler_Analyze implements PlugIn{
 		Prefs.set("KymoButler_p.double", p);
 		Prefs.set("KymoButler_minimumSize.double", minimumSize);
 		Prefs.set("KymoButler_minimumFrames.double", minimumFrames);
+		Prefs.set("KymoButler_useBidirectional.boolean", useBidirectional);
+		Prefs.set("KymoButler_decisionThreshold.double", decisionThreshold);
 		Prefs.set("KymoButler_addToManager.boolean", addToManager);
 		Prefs.set("KymoButler_simplifyTracks.boolean", simplifyTracks);
 		Prefs.set("KymoButler_clearManager.boolean", clearManager);
 		Prefs.set("KymoButler_showKymo.boolean", showKymo);
 		Prefs.set("KymoButler_showOverlay.boolean", showOverlay);
 		Prefs.set("KymoButler_allowCorrections.boolean", allowCorrections);
+		Prefs.set("KymoButler_openLocalTables.boolean", openLocalTables);
+		Prefs.set("KymoButler_batchMode.boolean", batchMode);
+		Prefs.set("KymoButler_batchRecursive.boolean", batchRecursive);
+		Prefs.set("KymoButler_batchShowOutputs.boolean", batchShowOutputs);
+		Prefs.set("KymoButler_improveBeforeAnalysis.boolean", improveBeforeAnalysis);
+		Prefs.set("KymoButler_improveStart.double", improveStart);
+		Prefs.set("KymoButler_improveStop.double", improveStop);
 	}
 	
 	/**
@@ -179,7 +232,15 @@ public class KymoButler_Analyze implements PlugIn{
 		if(showKymo || showOverlay || addToManager) {
 			Calibration cal=ip.getCalibration();
 			
-			kbio.setCurrentImageAsKymograph();
+			ImagePlus analysisImage=ip;
+			if(improveBeforeAnalysis) {
+				analysisImage=ip.duplicate();
+				analysisImage.setTitle(ip.getTitle());
+				if(ip.getOriginalFileInfo()!=null) analysisImage.setFileInfo(ip.getOriginalFileInfo());
+				KymoButler_ImproveKymo.apply(analysisImage, improveStart, improveStop);
+			}
+			
+			kbio.setKymograph(analysisImage);
 			kbio.setThreshold(p);
 			kbio.setMinimumSize(minimumSize);
 			kbio.setMinimumFrames(minimumFrames);
@@ -204,7 +265,7 @@ public class KymoButler_Analyze implements PlugIn{
 						if(showKymo) pkr.showKymograph(cal);
 						if(showOverlay) pkr.showOverlay(cal);
 					
-						if(addToManager && allowCorrections) {
+						if(addToManager && allowCorrections && !kbio.isLocalMode()) {
 							WaitForUserDialog wfud= new WaitForUserDialog("Correct and re-train", "From the current detections list you may:"+"\n"
 																							+" \n"
 																							+ "1-Correct the detections:"+"\n"
@@ -223,6 +284,8 @@ public class KymoButler_Analyze implements PlugIn{
 																							);
 							wfud.show();
 							new KymoButler_Upload().run(null);
+						}else if(addToManager && allowCorrections && kbio.isLocalMode()) {
+							IJ.showStatus("Local mode: corrections upload is not available.");
 						}
 					
 					
@@ -234,8 +297,94 @@ public class KymoButler_Analyze implements PlugIn{
 			}
 			
 			if(debug) kbio.saveResults(response, IJ.getDirectory("imageJ")+(new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date()))+"_debug_KymoButler.json");			
+			if(kbio.isLocalMode() && kbio.getLastOutputDir()!=null) {
+				IJ.log("Local outputs saved to: "+kbio.getLastOutputDir());
+				if(openLocalTables) openLocalTables();
+			}
+			
+			if(analysisImage!=ip) analysisImage.close();
 		}else {
 			IJ.showStatus("Nothing to do, please check at least one option");
+		}
+	}
+	
+	private void openLocalTables() {
+		String tracksPath=kbio.getLastTracksCsvPath();
+		String pprocPath=kbio.getLastPprocTablePath();
+		
+		openResultsTable(tracksPath, "KymoButler Tracks");
+		openResultsTable(pprocPath, "KymoButler PProc");
+	}
+	
+	private void openResultsTable(String path, String title) {
+		if(path==null) return;
+		try {
+			ResultsTable rt=ResultsTable.open(path);
+			if(rt!=null) rt.show(title);
+		} catch (Exception e) {
+			IJ.log("Unable to open results table: "+path);
+		}
+	}
+	
+	private void runBatch() {
+		DirectoryChooser dc=new DirectoryChooser("Select folder with images");
+		String folder=dc.getDirectory();
+		if(folder==null) return;
+		
+		java.util.List<java.io.File> files=new java.util.ArrayList<java.io.File>();
+		collectFiles(new java.io.File(folder), batchRecursive, files);
+		
+		if(files.isEmpty()) {
+			IJ.showMessage("Batch mode", "No files found in:\n"+folder);
+			return;
+		}
+		
+		IJ.showStatus("Batch started: "+files.size()+" image(s)");
+		IJ.showProgress(0);
+		
+		boolean origShowKymo=showKymo;
+		boolean origShowOverlay=showOverlay;
+		boolean origOpenTables=openLocalTables;
+		
+		if(!batchShowOutputs) {
+			showKymo=false;
+			showOverlay=false;
+			openLocalTables=false;
+		}
+		
+		for(int i=0; i<files.size(); i++) {
+			java.io.File file=files.get(i);
+			IJ.showStatus("Batch "+(i+1)+"/"+files.size()+": "+file.getName());
+			IJ.showProgress(i, files.size());
+			ImagePlus img=IJ.openImage(file.getAbsolutePath());
+			if(img==null) {
+				IJ.log("Batch skipped (unsupported format): "+file.getAbsolutePath());
+				continue;
+			}
+			
+			ip=img;
+			runAnalysis();
+			img.close();
+		}
+		
+		showKymo=origShowKymo;
+		showOverlay=origShowOverlay;
+		openLocalTables=origOpenTables;
+		
+		IJ.showProgress(1);
+		IJ.showStatus("Batch complete: "+files.size()+" image(s)");
+	}
+	
+	private void collectFiles(java.io.File dir, boolean recursive, java.util.List<java.io.File> out) {
+		if(dir==null || !dir.exists()) return;
+		java.io.File[] entries=dir.listFiles();
+		if(entries==null) return;
+		for(java.io.File entry : entries) {
+			if(entry.isDirectory()) {
+				if(recursive) collectFiles(entry, true, out);
+			}else {
+				out.add(entry);
+			}
 		}
 	}
 }

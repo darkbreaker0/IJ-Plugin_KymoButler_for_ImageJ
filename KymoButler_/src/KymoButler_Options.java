@@ -21,6 +21,8 @@
 *
 */
 
+import KymoButler.KymoButlerIO;
+import ij.IJ;
 import ij.Prefs;
 import ij.gui.GenericDialog;
 import ij.plugin.PlugIn;
@@ -31,17 +33,23 @@ import ij.plugin.PlugIn;
  *
  */
 public class KymoButler_Options implements PlugIn{
-	/** KymoButler default API **/
-	public static final String DEFAULT_API="https://www.wolframcloud.com/obj/deepmirror/Projects/KymoButler/API/Public/publicAPI";
+	/** Use local Wolfram Engine **/
+	boolean useLocal=Prefs.get("KymoButler_useLocal.boolean", true);
 	
-	/** Use default API ? **/
-	boolean useDefaultAPI=Prefs.get("KymoButler_useDefaultAPI.boolean", true);
+	/** WolframScript path **/
+	String wolframScriptPath=Prefs.get("KymoButler_wolframscript.string", "wolframscript");
 	
-	/** KymoButler API URL **/
-	String URL=Prefs.get("KymoButler_URL.string", "");
+	/** Local KymoButler path **/
+	String localKymoButlerPath=Prefs.get("KymoButler_localPath.string", "");
 	
-	/** The server timout response (default: 2 minutes) **/
-	long timeOut=(long) Prefs.get("KymoButler_timeOut.double", 120000);
+	/** Local output directory **/
+	String localOutputDir=Prefs.get("KymoButler_outputDir.string", System.getProperty("java.io.tmpdir"));
+	
+	/** Target device **/
+	String targetDevice=Prefs.get("KymoButler_targetDevice.string", "GPU");
+	
+	/** Use physical units in postprocessing **/
+	boolean pprocUsePhysical=Prefs.get("KymoButler_pprocUsePhysical.boolean", true);
 	
 	/** Debug tag: true to save JSON in IJ installation folder **/
 	boolean debug=Prefs.get("KymoButler_debug.boolean", false);
@@ -51,20 +59,36 @@ public class KymoButler_Options implements PlugIn{
 	 */
 	@Override
 	public void run(String arg) {
-		GenericDialog gd=new GenericDialog("KymoButler for IJ options by fabrice.cordelieres@gmail.com");
-		gd.addStringField("KymoButler_API_URL", useDefaultAPI?"":URL);
-		gd.addCheckbox("Use_default_API_?_(Limited_but_free)", useDefaultAPI);
-		gd.addNumericField("Server_timeout (default: 120 sec)", timeOut/1000, 0);
+		if(localKymoButlerPath==null || localKymoButlerPath.trim().isEmpty()) {
+			localKymoButlerPath=KymoButlerIO.guessLocalKymoPath();
+		}
+		GenericDialog gd=new GenericDialog("KymoButler for ImageJ");
+		gd.addCheckbox("Use_local_Wolfram_Engine", true);
+		gd.addStringField("WolframScript_path", wolframScriptPath, 30);
+		gd.addStringField("KymoButler_local_path", localKymoButlerPath, 30);
+		gd.addStringField("Local_output_directory", localOutputDir, 30);
+		gd.addChoice("Target_device", new String[] {"GPU","CPU"}, targetDevice);
+		gd.addCheckbox("PProc_use_physical_units", pprocUsePhysical);
 		gd.addCheckbox("Debug_mode (default: false)", debug);
 		gd.showDialog();
 		
 		if(gd.wasOKed()) {
-			URL=gd.getNextString();
-			useDefaultAPI=gd.getNextBoolean();
-			timeOut=(long) (gd.getNextNumber()*1000);
+			useLocal=true;
+			wolframScriptPath=gd.getNextString();
+			localKymoButlerPath=gd.getNextString();
+			localOutputDir=gd.getNextString();
+			targetDevice=gd.getNextChoice();
+			pprocUsePhysical=gd.getNextBoolean();
 			debug=gd.getNextBoolean();
 			
 			storePreferences();
+			
+			if(useLocal && (localKymoButlerPath==null || localKymoButlerPath.trim().isEmpty() 
+					|| !(new java.io.File(localKymoButlerPath, "packages"+java.io.File.separator+"KymoButler.wl").exists()))) {
+				IJ.showMessage("KymoButler local path is invalid", 
+						"Couldn't find packages/KymoButler.wl under:\n"+localKymoButlerPath+
+						"\n\nSet a valid path in KymoButler Options.");
+			}
 		}
 	}
 	
@@ -72,10 +96,12 @@ public class KymoButler_Options implements PlugIn{
 	 * Stores preferences, based on the user input
 	 */
 	public void storePreferences() {
-		if(useDefaultAPI) URL=DEFAULT_API;
-		Prefs.set("KymoButler_URL.string", URL);
-		Prefs.set("KymoButler_useDefaultAPI.boolean", useDefaultAPI);
-		Prefs.set("KymoButler_timeOut.double", timeOut);
+		Prefs.set("KymoButler_useLocal.boolean", useLocal);
+		Prefs.set("KymoButler_wolframscript.string", wolframScriptPath);
+		Prefs.set("KymoButler_localPath.string", localKymoButlerPath);
+		Prefs.set("KymoButler_outputDir.string", localOutputDir);
+		Prefs.set("KymoButler_targetDevice.string", targetDevice);
+		Prefs.set("KymoButler_pprocUsePhysical.boolean", pprocUsePhysical);
 		Prefs.set("KymoButler_debug.boolean", debug);
 	}
 }
