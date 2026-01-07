@@ -789,15 +789,30 @@ public class KymoButlerIO{
 		};
 		*/
 		
-		String[] classesToFind=new String[] {"commons-io-2.6.jar", "commons-logging-1.2.jar", "commons-codec-1.11.jar", "httpclient-4.5.9.jar", "httpcore-4.4.11.jar", "httpmime-4.5.9.jar", "json-20180813.jar"};
-	
-		String msg="";
+		String[][] jarCandidates = new String[][] {
+			{"commons-io-2.6.jar", "commons-io-2.17.0.jar"},
+			{"commons-logging-1.2.jar", "commons-logging-1.3.4.jar"},
+			{"commons-codec-1.11.jar", "commons-codec-1.17.1.jar"},
+			{"httpclient-4.5.9.jar", "httpclient-4.5.14.jar"},
+			{"httpcore-4.4.11.jar", "httpcore-4.4.16.jar"},
+			{"httpmime-4.5.9.jar", "httpmime-4.5.14.jar"},
+			{"json-20180813.jar", "json-20240303.jar"}
+		};
 		
-		for(String jar: classesToFind) {
-			boolean found=new File(IJ.getDirectory("plugins")+File.separator+"jars"+File.separator+jar).exists();
-			if(debug) IJ.log("Check "+jar+": "+(found?"":"not ")+"found");
-			
-			if(!found) msg=msg+(!msg.isEmpty()?"\n":"")+jar;
+		String msg="";
+		String pluginsJars=IJ.getDirectory("plugins")+File.separator+"jars"+File.separator;
+		String appJars=IJ.getDirectory("imagej")+File.separator+"jars"+File.separator;
+		
+		for(String[] candidates : jarCandidates) {
+			boolean found=false;
+			for(String jar : candidates) {
+				if(new File(pluginsJars+jar).exists() || new File(appJars+jar).exists()) {
+					found=true;
+					break;
+				}
+			}
+			if(debug) IJ.log("Check "+candidates[0]+": "+(found?"":"not ")+"found");
+			if(!found) msg=msg+(!msg.isEmpty()?"\n":"")+candidates[0];
 		}
 		
 		if(!msg.isEmpty()) IJ.error("The following libraries are missing:\n"+msg);

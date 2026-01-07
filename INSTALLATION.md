@@ -24,17 +24,17 @@ Download:
 
 The plugin uses the following JARs. Fiji already ships newer versions in `Fiji.app/jars`, but the plugin checks legacy filenames in `plugins/jars`.
 
-Place these in `Fiji.app/plugins/jars` (or copy/rename from `Fiji.app/jars`):
+Fiji already ships newer versions under `Fiji.app/jars` and the plugin now accepts those names. The following versions are known to work:
 
-- `commons-io-2.6.jar`
-- `commons-logging-1.2.jar`
-- `commons-codec-1.11.jar`
-- `httpclient-4.5.9.jar`
-- `httpcore-4.4.11.jar`
-- `httpmime-4.5.9.jar`
-- `json-20180813.jar`
+- `commons-io-2.17.0.jar`
+- `commons-logging-1.3.4.jar`
+- `commons-codec-1.17.1.jar`
+- `httpclient-4.5.14.jar`
+- `httpcore-4.4.16.jar`
+- `httpmime-4.5.14.jar`
+- `json-20240303.jar`
 
-Tip: If you already have newer JARs, you can duplicate them using the legacy names above.
+If you install to `Fiji.app/plugins/jars`, either the newer names above or the older legacy names will be accepted.
 
 ## Build from source (Windows PowerShell)
 
