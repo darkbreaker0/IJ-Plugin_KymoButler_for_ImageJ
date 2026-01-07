@@ -9,7 +9,17 @@ This plugin runs KymoButler locally using Wolfram Engine and requires ImageJ/Fij
 - Wolfram Engine + `wolframscript`
 - Local KymoButler repo with `packages/KymoButler.wl`
 
+## Install Wolfram Engine
+
+Download and install Wolfram Engine from:
+
+- https://www.wolfram.com/engine/
+
+After installation, ensure `wolframscript` is available on your PATH or note the full path for the plugin options.
+
 ## Install the plugin JAR
+
+A prebuilt JAR is available on the GitHub Releases page. You can optionally build it from source.
 
 1) Build the JAR (see below).
 2) Copy the JAR to your ImageJ/Fiji plugins folder:
