@@ -49,6 +49,13 @@ Note: If the input image has a valid on-disk path, outputs are written to that i
    - Show kymograph / overlay
    - Open local output tables
 
+Parameter notes:
+
+- **Threshold**: probability cutoff for accepting a pixel as part of a track. Higher values are stricter (fewer detections).
+- **Minimum size**: minimum object size (in pixels) required for a detection to be kept.
+- **Minimum frames**: minimum number of consecutive time points for a track to be kept.
+- **Bidirectional vs. unidirectional**: unidirectional outputs separate anterograde and retrograde tracks; bidirectional uses a single model that tracks both directions in one pass and labels tracks as bidirectional.
+
 ## Batch analysis
 
 1) `Plugins > KymoButler for ImageJ > KymoButler Analyse`.

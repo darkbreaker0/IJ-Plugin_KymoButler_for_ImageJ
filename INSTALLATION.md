@@ -16,6 +16,10 @@ This plugin runs KymoButler locally using Wolfram Engine and requires ImageJ/Fij
    - `Fiji.app/plugins/KymoButler4IJ_.jar`
 3) Restart ImageJ/Fiji.
 
+Download:
+- Plugin JAR: https://github.com/darkbreaker0/IJ-Plugin_KymoButler_for_ImageJ/releases/latest
+- KymoButler (local models and Wolfram code): https://github.com/MaxJakobs/KymoButler
+
 ## Dependencies
 
 The plugin uses the following JARs. Fiji already ships newer versions in `Fiji.app/jars`, but the plugin checks legacy filenames in `plugins/jars`.
