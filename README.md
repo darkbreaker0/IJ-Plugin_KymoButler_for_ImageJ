@@ -7,6 +7,12 @@ This fork runs KymoButler locally through Wolfram Engine instead of relying on t
 - Overlay images + ROI tracks + postprocessing outputs
 - Improve Kymo filter (wavelet-like enhancement) built in
 
+Original KymoButler is a Wolfram-based kymograph analysis tool by Max Jakobs et al.:
+https://github.com/MaxJakobs/KymoButler
+
+Original paper:
+https://elifesciences.org/articles/42288
+
 For installation, see `INSTALLATION.md`. For usage and outputs, see `USER_MANUAL.md`.
 
 ## Credits / Acknowledgements
