@@ -1,4 +1,4 @@
-# KymoButler for ImageJ (Local AI)
+# KymoButler for ImageJ (Local Wolfram model)
 
 This fork runs KymoButler locally through Wolfram Engine instead of relying on the discontinued cloud API. It provides:
 
