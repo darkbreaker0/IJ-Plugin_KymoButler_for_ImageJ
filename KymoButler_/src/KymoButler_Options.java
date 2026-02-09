@@ -24,7 +24,7 @@
 import KymoButler.KymoButlerIO;
 import ij.IJ;
 import ij.Prefs;
-import ij.gui.GenericDialog;
+import ij.gui.NonBlockingGenericDialog;
 import ij.plugin.PlugIn;
 
 /**
@@ -34,7 +34,7 @@ import ij.plugin.PlugIn;
  */
 public class KymoButler_Options implements PlugIn{
 	/** Use local Wolfram Engine **/
-	boolean useLocal=Prefs.get("KymoButler_useLocal.boolean", true);
+	boolean useLocal=true;
 	
 	/** WolframScript path **/
 	String wolframScriptPath=Prefs.get("KymoButler_wolframscript.string", "wolframscript");
@@ -62,8 +62,8 @@ public class KymoButler_Options implements PlugIn{
 		if(localKymoButlerPath==null || localKymoButlerPath.trim().isEmpty()) {
 			localKymoButlerPath=KymoButlerIO.guessLocalKymoPath();
 		}
-		GenericDialog gd=new GenericDialog("KymoButler for ImageJ");
-		gd.addCheckbox("Use_local_Wolfram_Engine", true);
+		NonBlockingGenericDialog gd=new NonBlockingGenericDialog("KymoButler for ImageJ");
+		gd.addMessage("Cloud mode is deprecated. Local mode is always enabled.");
 		gd.addStringField("WolframScript_path", wolframScriptPath, 30);
 		gd.addStringField("KymoButler_local_path", localKymoButlerPath, 30);
 		gd.addStringField("Local_output_directory", localOutputDir, 30);
@@ -96,7 +96,7 @@ public class KymoButler_Options implements PlugIn{
 	 * Stores preferences, based on the user input
 	 */
 	public void storePreferences() {
-		Prefs.set("KymoButler_useLocal.boolean", useLocal);
+		Prefs.set("KymoButler_useLocal.boolean", true);
 		Prefs.set("KymoButler_wolframscript.string", wolframScriptPath);
 		Prefs.set("KymoButler_localPath.string", localKymoButlerPath);
 		Prefs.set("KymoButler_outputDir.string", localOutputDir);

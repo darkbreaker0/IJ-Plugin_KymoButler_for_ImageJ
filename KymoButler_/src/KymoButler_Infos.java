@@ -52,6 +52,10 @@ public class KymoButler_Infos implements PlugIn{
 
 	@Override
 	public void run(String arg) {
+		IJ.log("Cloud mode is deprecated. Infos endpoint is disabled in this local-only fork.");
+		IJ.showMessage("KymoButler", "Cloud mode is deprecated.\nInfos endpoint is disabled.");
+		return;
+		/*
 		if(KymoButlerIO.checkForLibraries()) {
 			if(!URL.isEmpty()) {	
 				getInfos();
@@ -61,6 +65,7 @@ public class KymoButler_Infos implements PlugIn{
 		}else {
 			IJ.showStatus("Installation of the required libraries needs to be done");	
 		}
+		*/
 	}
 	
 	/**

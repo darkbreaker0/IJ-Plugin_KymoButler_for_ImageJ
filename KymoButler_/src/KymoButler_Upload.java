@@ -56,6 +56,10 @@ public class KymoButler_Upload implements PlugIn{
 	
 	@Override
 	public void run(String arg) {
+		IJ.log("Cloud mode is deprecated. Upload is disabled in this local-only fork.");
+		IJ.showMessage("KymoButler", "Cloud mode is deprecated.\nUpload is disabled.");
+		return;
+		/*
 		ip=WindowManager.getCurrentImage();
 		rm=RoiManager.getRoiManager();
 		
@@ -76,6 +80,7 @@ public class KymoButler_Upload implements PlugIn{
 		}else {
 			IJ.showStatus("Installation of the required libraries needs to be done");	
 		}
+		*/
 	}
 	
 	/**

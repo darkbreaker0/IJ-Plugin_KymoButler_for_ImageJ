@@ -73,7 +73,14 @@ public class KymoButlerResponseParser {
 	 * @param JSONContent the content to parse, as a string
 	 */
 	public KymoButlerResponseParser(String JSONContent) {
-		json=new JSONObject(JSONContent);
+		try {
+			json=new JSONObject(JSONContent);
+		} catch (JSONException e) {
+			IJ.log("Invalid JSON response.");
+			json=new JSONObject();
+			json.put(KymoButlerFields.ERROR_FIELD_TAG, true);
+			json.put(KymoButlerFields.MESSAGES_FIELD_TAG, "Invalid JSON response.");
+		}
 	}
 	
 	/**
@@ -99,7 +106,16 @@ public class KymoButlerResponseParser {
 	 * @return true if error  present, false otherwise
 	 */
 	public boolean hasError() {
-		return json.has(KymoButlerFields.ERROR_FIELD_TAG);
+		if(!json.has(KymoButlerFields.ERROR_FIELD_TAG)) return false;
+		try {
+			Object raw=json.get(KymoButlerFields.ERROR_FIELD_TAG);
+			if(raw instanceof Boolean) return ((Boolean) raw).booleanValue();
+			if(raw instanceof Number) return ((Number) raw).intValue()!=0;
+			if(raw instanceof String) return Boolean.parseBoolean(((String) raw).trim());
+		}catch (JSONException e) {
+			return true;
+		}
+		return true;
 	}
 	
 	

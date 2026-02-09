@@ -65,7 +65,7 @@ public class KymoButlerIO{
 	String URL=Prefs.get("KymoButler_URL.string", "");
 	
 	/** Use local Wolfram Engine **/
-	boolean useLocal=Prefs.get("KymoButler_useLocal.boolean", true);
+	boolean useLocal=true;
 	
 	/** WolframScript path **/
 	String wolframScriptPath=Prefs.get("KymoButler_wolframscript.string", "wolframscript");
@@ -300,6 +300,16 @@ public class KymoButlerIO{
 	 * @return a String JSON formatted, containing the response (messages, MaxKymograph, KymographsLeft)
 	 */
 	public String getStatistics() {
+		IJ.log("Cloud mode is deprecated. Statistics endpoint is disabled.");
+		IJ.showMessage("KymoButler", "Cloud mode is deprecated.\nStatistics endpoint is disabled.");
+		return "{\"error\":true,\"messages\":\"Cloud mode is deprecated. Statistics endpoint is disabled.\"}";
+	}
+	
+	/**
+	 * Legacy cloud statistics request.
+	 */
+	public String getStatisticsCloud() {
+		prepareRequestState();
 		MultipartEntityBuilder builder=MultipartEntityBuilder.create()
 				.setMode(HttpMultipartMode.BROWSER_COMPATIBLE)
 				.addTextBody(KymoButlerFields.QUERY_FIELD_TAG, KymoButlerFields.QUERY_STATS_FIELD_TAG);
@@ -338,7 +348,14 @@ public class KymoButlerIO{
 	 */
 	public String getAnalysisResults() {
 		refreshLocalPrefs();
-		if(useLocal) return getAnalysisResultsLocal();
+		return getAnalysisResultsLocal();
+	}
+	
+	/**
+	 * Legacy cloud analysis request.
+	 */
+	public String getAnalysisResultsCloud() {
+		prepareRequestState();
 		MultipartEntityBuilder builder=MultipartEntityBuilder.create()
 				.setMode(HttpMultipartMode.BROWSER_COMPATIBLE)
 				.addTextBody(KymoButlerFields.QUERY_FIELD_TAG, KymoButlerFields.QUERY_ANALYSIS_FIELD_TAG)
@@ -501,6 +518,16 @@ public class KymoButlerIO{
 	 * @return a String JSON formatted, containing the response
 	 */
 	public String upload() {
+		IJ.log("Cloud mode is deprecated. Upload endpoint is disabled.");
+		IJ.showMessage("KymoButler", "Cloud mode is deprecated.\nUpload endpoint is disabled.");
+		return "{\"error\":true,\"messages\":\"Cloud mode is deprecated. Upload endpoint is disabled.\"}";
+	}
+	
+	/**
+	 * Legacy cloud upload request.
+	 */
+	public String uploadCloud() {
+		prepareRequestState();
 		MultipartEntityBuilder builder=MultipartEntityBuilder.create()
 				.setMode(HttpMultipartMode.BROWSER_COMPATIBLE)
 				.addTextBody(KymoButlerFields.QUERY_FIELD_TAG, KymoButlerFields.QUERY_UPLOAD_FIELD_TAG)
@@ -589,8 +616,15 @@ public class KymoButlerIO{
 		return sdf.format(elapsedTime);
 	}
 
+	private void prepareRequestState() {
+		response=null;
+		escPressed=false;
+		IJ.resetEscape();
+	}
+
 	private void refreshLocalPrefs() {
-		useLocal=Prefs.get("KymoButler_useLocal.boolean", true);
+		useLocal=true;
+		Prefs.set("KymoButler_useLocal.boolean", true);
 		wolframScriptPath=Prefs.get("KymoButler_wolframscript.string", "wolframscript");
 		localKymoButlerPath=Prefs.get("KymoButler_localPath.string", "");
 		localOutputDir=Prefs.get("KymoButler_outputDir.string", System.getProperty("java.io.tmpdir"));
@@ -732,7 +766,7 @@ public class KymoButlerIO{
 	
 	/**
 	 * Encodes the input Roi as a JSON segment
-	 * “{{{track1_t1,track1_x1},{track1_t2,track1_x2},{track1_t3,track1_x3},...},{{track2_t1,track2_x1},{track2_t2,track2_x2},{track2_t3,track2_x3},...},…}” 
+\t * Example format: nested track coordinates in JSON-like braces.
 	 * @param roi the input Roi
 	 * @return a String containing the Roi's coordinates encoded as a JSON segment
 	 */
@@ -747,7 +781,7 @@ public class KymoButlerIO{
 	
 	/**
 	 * Encodes the input ROIs set as a JSON segment
-	 * “{{{track1_t1,track1_x1},{track1_t2,track1_x2},{track1_t3,track1_x3},...},{{track2_t1,track2_x1},{track2_t2,track2_x2},{track2_t3,track2_x3},...},…}” 
+\t * Example format: nested track coordinates in JSON-like braces.
 	 * @param rois the ROIs set to convert
 	 * @return a String containing the Roi's coordinates encoded as a JSON segment
 	 */
@@ -761,7 +795,7 @@ public class KymoButlerIO{
 	
 	/**
 	 * Encodes the content of the RoiManager as a JSON segment
-	 * “{{{track1_t1,track1_x1},{track1_t2,track1_x2},{track1_t3,track1_x3},...},{{track2_t1,track2_x1},{track2_t2,track2_x2},{track2_t3,track2_x3},...},…}” 
+\t * Example format: nested track coordinates in JSON-like braces.
 	 * @return a String containing the Roi's coordinates encoded as a JSON segment
 	 */
 	private String roiManagerToJSON() {
@@ -792,10 +826,6 @@ public class KymoButlerIO{
 		String[][] jarCandidates = new String[][] {
 			{"commons-io-2.6.jar", "commons-io-2.17.0.jar"},
 			{"commons-logging-1.2.jar", "commons-logging-1.3.4.jar"},
-			{"commons-codec-1.11.jar", "commons-codec-1.17.1.jar"},
-			{"httpclient-4.5.9.jar", "httpclient-4.5.14.jar"},
-			{"httpcore-4.4.11.jar", "httpcore-4.4.16.jar"},
-			{"httpmime-4.5.9.jar", "httpmime-4.5.14.jar"},
 			{"json-20180813.jar", "json-20240303.jar"}
 		};
 		

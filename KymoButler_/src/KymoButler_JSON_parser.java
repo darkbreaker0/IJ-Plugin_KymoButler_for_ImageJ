@@ -85,6 +85,10 @@ public class KymoButler_JSON_parser implements PlugIn{
 
 	@Override
 	public void run(String arg) {
+		IJ.log("Cloud mode is deprecated. JSON parser endpoint is disabled in this local-only fork.");
+		IJ.showMessage("KymoButler", "Cloud mode is deprecated.\nLegacy JSON parser is disabled.");
+		return;
+		/*
 		if(checkForLibraries()) {
 			if(!URL.isEmpty()) {	
 				if(getJSONFile()) showGUI();
@@ -94,6 +98,7 @@ public class KymoButler_JSON_parser implements PlugIn{
 		}else {
 			IJ.showStatus("Installation of the required libraries needs to be done");	
 		}
+		*/
 	}
 	
 	

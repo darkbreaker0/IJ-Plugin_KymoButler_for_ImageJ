@@ -23,6 +23,10 @@
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Vector;
+
+import org.apache.commons.io.FileUtils;
+import org.json.JSONObject;
 
 import KymoButler.KymoButlerIO;
 import KymoButler.KymoButlerResponseParser;
@@ -30,11 +34,11 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.Prefs;
 import ij.WindowManager;
-import ij.gui.GenericDialog;
-import ij.gui.WaitForUserDialog;
+import ij.gui.NonBlockingGenericDialog;
 import ij.measure.Calibration;
 import ij.measure.ResultsTable;
 import ij.io.DirectoryChooser;
+import ij.io.OpenDialog;
 import ij.plugin.PlugIn;
 
 /**
@@ -44,7 +48,7 @@ import ij.plugin.PlugIn;
  */
 public class KymoButler_Analyze implements PlugIn{
 	/** Use local Wolfram Engine **/
-	boolean useLocal=Prefs.get("KymoButler_useLocal.boolean", true);
+	boolean useLocal=true;
 	
 	/** The ImagePlus that is present at startup (or null) **/
 	ImagePlus ip=null;
@@ -108,6 +112,14 @@ public class KymoButler_Analyze implements PlugIn{
 	
 	/** Debug tag: true to save JSON in IJ installation folder **/
 	boolean debug=Prefs.get("KymoButler_debug.boolean", false);
+
+	/** Optional parameters JSON loading **/
+	boolean loadParamsFromJson=Prefs.get("KymoButler_loadParamsFromJson.boolean", false);
+	String paramsJsonPath=Prefs.get("KymoButler_paramsJsonPath.string", "");
+
+	/** Hover hint popup **/
+	private java.awt.Dialog hoverHintDialog=null;
+	private java.awt.Label hoverHintLabel=null;
 	
 	String helpMsg="<html>Version 1.0.0, 18 nov. 2019<br>"
 			+ "This plugin is powered by <a href=\"https://deepmirror.ai/software/kymobutler/\">KymoButler</a><br>"
@@ -137,7 +149,10 @@ public class KymoButler_Analyze implements PlugIn{
 	 * Displays the GUI, stores the parameters and launches the analysis
 	 */
 	public void showGUI() {
-		GenericDialog gd=new GenericDialog("KymoButler for ImageJ");
+		NonBlockingGenericDialog gd=new NonBlockingGenericDialog("KymoButler for ImageJ");
+		gd.addMessage("Cloud mode is deprecated. Local mode is always enabled.");
+		gd.addCheckbox("Load_parameters_from_JSON", loadParamsFromJson);
+		gd.addStringField("Parameters_JSON_path", paramsJsonPath, 40);
 		gd.addMessage("Parameters");
 		gd.addNumericField("Threshold (default: 0.2)", p, 2);
 		gd.addNumericField("Minimum_size (default: 3)", minimumSize, 0);
@@ -162,11 +177,23 @@ public class KymoButler_Analyze implements PlugIn{
 		gd.addNumericField("Improve_stop", improveStop, 0);
 		
 		gd.addMessage("Note: Local processing uses Wolfram Engine on your machine.");
+		applyTooltips(gd);
 		
 		gd.addHelp(helpMsg);
 		gd.showDialog();
 		
 		if(gd.wasOKed()) {
+			loadParamsFromJson=gd.getNextBoolean();
+			paramsJsonPath=gd.getNextString();
+			if(loadParamsFromJson) {
+				if(paramsJsonPath==null || paramsJsonPath.trim().isEmpty()) {
+					OpenDialog od=new OpenDialog("Select parameters JSON file", OpenDialog.getLastDirectory(), "*.json");
+					String dir=od.getDirectory();
+					String name=od.getFileName();
+					if(dir!=null && name!=null) paramsJsonPath=dir+name;
+				}
+				loadParametersFromJson(paramsJsonPath);
+			}
 			p=(float) gd.getNextNumber();
 			minimumSize=(float) gd.getNextNumber();
 			minimumFrames=(float) gd.getNextNumber();
@@ -186,6 +213,7 @@ public class KymoButler_Analyze implements PlugIn{
 			improveStart=(int) gd.getNextNumber();
 			improveStop=(int) gd.getNextNumber();
 			
+			Prefs.set("KymoButler_useLocal.boolean", true);
 			storePreferences();
 			
 			if(!batchMode && ip==null) {
@@ -205,6 +233,7 @@ public class KymoButler_Analyze implements PlugIn{
 	 * Stores preferences, based on the user input
 	 */
 	public void storePreferences() {
+		Prefs.set("KymoButler_useLocal.boolean", true);
 		Prefs.set("KymoButler_p.double", p);
 		Prefs.set("KymoButler_minimumSize.double", minimumSize);
 		Prefs.set("KymoButler_minimumFrames.double", minimumFrames);
@@ -223,6 +252,8 @@ public class KymoButler_Analyze implements PlugIn{
 		Prefs.set("KymoButler_improveBeforeAnalysis.boolean", improveBeforeAnalysis);
 		Prefs.set("KymoButler_improveStart.double", improveStart);
 		Prefs.set("KymoButler_improveStop.double", improveStop);
+		Prefs.set("KymoButler_loadParamsFromJson.boolean", loadParamsFromJson);
+		Prefs.set("KymoButler_paramsJsonPath.string", paramsJsonPath==null?"":paramsJsonPath);
 	}
 	
 	/**
@@ -230,79 +261,81 @@ public class KymoButler_Analyze implements PlugIn{
 	 */
 	public void runAnalysis() {
 		if(showKymo || showOverlay || addToManager) {
+			long analysisStart=System.currentTimeMillis();
+			IJ.log("[KymoButler] Analysis started");
 			Calibration cal=ip.getCalibration();
 			
 			ImagePlus analysisImage=ip;
 			if(improveBeforeAnalysis) {
+				long t0=System.currentTimeMillis();
+				IJ.log("[KymoButler] Step: Improve Kymo");
 				analysisImage=ip.duplicate();
 				analysisImage.setTitle(ip.getTitle());
 				if(ip.getOriginalFileInfo()!=null) analysisImage.setFileInfo(ip.getOriginalFileInfo());
 				KymoButler_ImproveKymo.apply(analysisImage, improveStart, improveStop);
+				IJ.log("[KymoButler] Step complete: Improve Kymo ("+elapsedMs(t0)+" ms)");
 			}
 			
+			long t1=System.currentTimeMillis();
+			IJ.log("[KymoButler] Step: Prepare input");
 			kbio.setKymograph(analysisImage);
 			kbio.setThreshold(p);
 			kbio.setMinimumSize(minimumSize);
 			kbio.setMinimumFrames(minimumFrames);
+			IJ.log("[KymoButler] Step complete: Prepare input ("+elapsedMs(t1)+" ms)");
 			
+			long t2=System.currentTimeMillis();
+			IJ.log("[KymoButler] Step: Run local analysis");
 			String response=kbio.getAnalysisResults();
+			IJ.log("[KymoButler] Step complete: Run local analysis ("+elapsedMs(t2)+" ms)");
 			
 			if(response==null) {
 				IJ.showStatus("Process cancelled, either by server or by user");
 			}else {
 				if(KymoButlerResponseParser.isJSON(response)){
+					long t3=System.currentTimeMillis();
+					IJ.log("[KymoButler] Step: Parse response");
 					KymoButlerResponseParser pkr=new KymoButlerResponseParser(response);
 
 					/** Check if KB returns an error before running parsing*/
 					if(pkr.hasError()){
 						if(pkr.hasMessages()){ 
 							IJ.log(pkr.getMessages());
+							IJ.showMessage("KymoButler", pkr.getMessages());
 						}else{
 							IJ.log("Undefined Error!");	
+							IJ.showMessage("KymoButler", "Undefined error while parsing local response.");
 						}		
 					}else{	
+						long outStep=System.currentTimeMillis();
 						if(addToManager) pkr.pushRoisToRoiManager(simplifyTracks, clearManager);
 						if(showKymo) pkr.showKymograph(cal);
 						if(showOverlay) pkr.showOverlay(cal);
-					
-						if(addToManager && allowCorrections && !kbio.isLocalMode()) {
-							WaitForUserDialog wfud= new WaitForUserDialog("Correct and re-train", "From the current detections list you may:"+"\n"
-																							+" \n"
-																							+ "1-Correct the detections:"+"\n"
-																							+ "    a-Click on the track to correct in the ROI Manager"+"\n"
-																							+ "    b-Modify the ROI on the image"+"\n"
-																							+ "    c-Click 'update' button in the ROI Manager"+"\n"
-																							+ "    d-Repeat for all tracks you want to modify"+"\n"
-																							+" \n"
-																							+ "2-Add detections:"+"\n"
-																							+ "    a-Activate the polyline tool"+"\n"
-																							+ "    b-Draw the missing track on the image"+"\n"
-																							+ "    c-Click 'add' button in the ROI Manager"+"\n"
-																							+ "    d-Repeat for all the missing tracks"+"\n"
-																							+" \n"
-																							+"Once done, please click on Ok"
-																							);
-							wfud.show();
-							new KymoButler_Upload().run(null);
-						}else if(addToManager && allowCorrections && kbio.isLocalMode()) {
+
+						if(addToManager && allowCorrections) {
 							IJ.showStatus("Local mode: corrections upload is not available.");
 						}
+						IJ.log("[KymoButler] Step complete: Render outputs ("+elapsedMs(outStep)+" ms)");
 					
 					
 						if(debug && pkr.hasSomethingToLog()) IJ.log(pkr.getSomethingToLog());
 					}
+					IJ.log("[KymoButler] Step complete: Parse response ("+elapsedMs(t3)+" ms)");
 				}else {
-					IJ.showStatus("The response doesn't seem to be properly formatted");
+					IJ.log("The response doesn't seem to be properly formatted");
+					IJ.showMessage("KymoButler", "Invalid JSON response: unable to parse local output.");
 				}
 			}
 			
 			if(debug) kbio.saveResults(response, IJ.getDirectory("imageJ")+(new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date()))+"_debug_KymoButler.json");			
 			if(kbio.isLocalMode() && kbio.getLastOutputDir()!=null) {
 				IJ.log("Local outputs saved to: "+kbio.getLastOutputDir());
+				saveParameterLog(kbio.getLastOutputDir(), analysisStart, System.currentTimeMillis());
 				if(openLocalTables) openLocalTables();
 			}
 			
 			if(analysisImage!=ip) analysisImage.close();
+			IJ.log("[KymoButler] Analysis finished ("+elapsedMs(analysisStart)+" ms)");
 		}else {
 			IJ.showStatus("Nothing to do, please check at least one option");
 		}
@@ -327,6 +360,7 @@ public class KymoButler_Analyze implements PlugIn{
 	}
 	
 	private void runBatch() {
+		long batchStart=System.currentTimeMillis();
 		DirectoryChooser dc=new DirectoryChooser("Select folder with images");
 		String folder=dc.getDirectory();
 		if(folder==null) return;
@@ -354,6 +388,7 @@ public class KymoButler_Analyze implements PlugIn{
 		
 		for(int i=0; i<files.size(); i++) {
 			java.io.File file=files.get(i);
+			long fileStart=System.currentTimeMillis();
 			IJ.showStatus("Batch "+(i+1)+"/"+files.size()+": "+file.getName());
 			IJ.showProgress(i, files.size());
 			ImagePlus img=IJ.openImage(file.getAbsolutePath());
@@ -365,6 +400,7 @@ public class KymoButler_Analyze implements PlugIn{
 			ip=img;
 			runAnalysis();
 			img.close();
+			IJ.log("[KymoButler] Batch item done: "+file.getName()+" ("+elapsedMs(fileStart)+" ms)");
 		}
 		
 		showKymo=origShowKymo;
@@ -373,6 +409,146 @@ public class KymoButler_Analyze implements PlugIn{
 		
 		IJ.showProgress(1);
 		IJ.showStatus("Batch complete: "+files.size()+" image(s)");
+		IJ.log("[KymoButler] Batch complete ("+elapsedMs(batchStart)+" ms)");
+	}
+
+	private long elapsedMs(long startMs) {
+		return System.currentTimeMillis()-startMs;
+	}
+
+	private void applyTooltips(NonBlockingGenericDialog gd) {
+		@SuppressWarnings("rawtypes")
+		Vector numFields=gd.getNumericFields();
+		if(numFields!=null && numFields.size()>=6) {
+			attachHoverHint((java.awt.Component)numFields.get(0), "Threshold: higher values reduce false positives but may miss weak tracks.");
+			attachHoverHint((java.awt.Component)numFields.get(1), "Minimum size: minimum spatial displacement (pixels) to accept a track.");
+			attachHoverHint((java.awt.Component)numFields.get(2), "Minimum frames: minimum time points required for one track.");
+			attachHoverHint((java.awt.Component)numFields.get(3), "Decision threshold for bidirectional model classification.");
+			attachHoverHint((java.awt.Component)numFields.get(4), "Improve start scale for preprocessing.");
+			attachHoverHint((java.awt.Component)numFields.get(5), "Improve stop scale for preprocessing.");
+		}
+		@SuppressWarnings("rawtypes")
+		Vector checks=gd.getCheckboxes();
+		if(checks!=null) {
+			for(int i=0; i<checks.size(); i++) {
+				java.awt.Component c=(java.awt.Component) checks.get(i);
+				if(i==0) attachHoverHint(c, "Load parameters from a saved JSON before running.");
+				if(i==1) attachHoverHint(c, "Enable bidirectional model in local KymoButler.");
+				if(i==2) attachHoverHint(c, "Add detected tracks to ROI Manager.");
+				if(i==3) attachHoverHint(c, "Simplify tracks by removing redundant points.");
+				if(i==4) attachHoverHint(c, "Clear ROI Manager before adding new tracks.");
+				if(i==5) attachHoverHint(c, "Show reconstructed kymograph image.");
+				if(i==6) attachHoverHint(c, "Show color overlay output.");
+				if(i==7) attachHoverHint(c, "Open local CSV result tables automatically.");
+				if(i==8) attachHoverHint(c, "Process all images in a selected folder.");
+				if(i==9) attachHoverHint(c, "Include subfolders during batch mode.");
+				if(i==10) attachHoverHint(c, "Display image outputs during batch runs.");
+				if(i==11) attachHoverHint(c, "Apply Improve Kymo preprocessing before analysis.");
+			}
+		}
+	}
+
+	private void attachHoverHint(final java.awt.Component c, final String msg) {
+		if(c==null || msg==null) return;
+		c.addMouseListener(new java.awt.event.MouseAdapter() {
+			@Override
+			public void mouseEntered(java.awt.event.MouseEvent e) {
+				IJ.showStatus("[Hint] "+msg);
+				showHoverHint(e, msg);
+			}
+			@Override
+			public void mouseExited(java.awt.event.MouseEvent e) {
+				hideHoverHint();
+			}
+		});
+	}
+
+	private void showHoverHint(java.awt.event.MouseEvent e, String msg) {
+		try {
+			if(hoverHintDialog==null) {
+				hoverHintDialog=new java.awt.Dialog((java.awt.Frame)null);
+				hoverHintDialog.setModal(false);
+				hoverHintDialog.setUndecorated(true);
+				hoverHintLabel=new java.awt.Label();
+				hoverHintLabel.setBackground(new java.awt.Color(255, 255, 220));
+				hoverHintDialog.add(hoverHintLabel);
+				hoverHintDialog.setAlwaysOnTop(true);
+			}
+			hoverHintLabel.setText(" "+msg+" ");
+			hoverHintDialog.pack();
+			java.awt.Point p=e.getLocationOnScreen();
+			hoverHintDialog.setLocation(p.x+12, p.y+18);
+			hoverHintDialog.setVisible(true);
+		} catch (Exception ex) {
+			IJ.log("[KymoButler] Hover hint unavailable.");
+		}
+	}
+
+	private void hideHoverHint() {
+		if(hoverHintDialog!=null) hoverHintDialog.setVisible(false);
+	}
+
+	private void loadParametersFromJson(String path) {
+		if(path==null || path.trim().isEmpty()) {
+			IJ.log("[KymoButler] Parameter JSON path is empty; skipping load.");
+			return;
+		}
+		try {
+			String txt=FileUtils.readFileToString(new java.io.File(path), "UTF-8");
+			JSONObject j=new JSONObject(txt);
+			if(j.has("threshold")) p=(float) j.getDouble("threshold");
+			if(j.has("minimumSize")) minimumSize=(float) j.getDouble("minimumSize");
+			if(j.has("minimumFrames")) minimumFrames=(float) j.getDouble("minimumFrames");
+			if(j.has("useBidirectional")) useBidirectional=j.getBoolean("useBidirectional");
+			if(j.has("decisionThreshold")) decisionThreshold=(float) j.getDouble("decisionThreshold");
+			if(j.has("addToManager")) addToManager=j.getBoolean("addToManager");
+			if(j.has("simplifyTracks")) simplifyTracks=j.getBoolean("simplifyTracks");
+			if(j.has("clearManager")) clearManager=j.getBoolean("clearManager");
+			if(j.has("showKymo")) showKymo=j.getBoolean("showKymo");
+			if(j.has("showOverlay")) showOverlay=j.getBoolean("showOverlay");
+			if(j.has("openLocalTables")) openLocalTables=j.getBoolean("openLocalTables");
+			if(j.has("batchMode")) batchMode=j.getBoolean("batchMode");
+			if(j.has("batchRecursive")) batchRecursive=j.getBoolean("batchRecursive");
+			if(j.has("batchShowOutputs")) batchShowOutputs=j.getBoolean("batchShowOutputs");
+			if(j.has("improveBeforeAnalysis")) improveBeforeAnalysis=j.getBoolean("improveBeforeAnalysis");
+			if(j.has("improveStart")) improveStart=j.getInt("improveStart");
+			if(j.has("improveStop")) improveStop=j.getInt("improveStop");
+			IJ.log("[KymoButler] Parameters loaded from: "+path);
+		} catch (Exception e) {
+			IJ.log("[KymoButler] Unable to load parameters JSON: "+path);
+			IJ.showMessage("KymoButler", "Could not load parameters JSON.\nUsing dialog values instead.");
+		}
+	}
+
+	private void saveParameterLog(String outputDir, long startMs, long endMs) {
+		try {
+			JSONObject j=new JSONObject();
+			j.put("timestamp", new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date()));
+			j.put("analysisDurationMs", endMs-startMs);
+			j.put("threshold", p);
+			j.put("minimumSize", minimumSize);
+			j.put("minimumFrames", minimumFrames);
+			j.put("useBidirectional", useBidirectional);
+			j.put("decisionThreshold", decisionThreshold);
+			j.put("addToManager", addToManager);
+			j.put("simplifyTracks", simplifyTracks);
+			j.put("clearManager", clearManager);
+			j.put("showKymo", showKymo);
+			j.put("showOverlay", showOverlay);
+			j.put("openLocalTables", openLocalTables);
+			j.put("batchMode", batchMode);
+			j.put("batchRecursive", batchRecursive);
+			j.put("batchShowOutputs", batchShowOutputs);
+			j.put("improveBeforeAnalysis", improveBeforeAnalysis);
+			j.put("improveStart", improveStart);
+			j.put("improveStop", improveStop);
+			j.put("imageTitle", ip!=null?ip.getTitle():"");
+			java.io.File out=new java.io.File(outputDir, "kymobutler_parameters_log.json");
+			FileUtils.writeStringToFile(out, j.toString(2), "UTF-8");
+			IJ.log("[KymoButler] Parameters log saved: "+out.getAbsolutePath());
+		} catch (Exception e) {
+			IJ.log("[KymoButler] Unable to save parameters log JSON.");
+		}
 	}
 	
 	private void collectFiles(java.io.File dir, boolean recursive, java.util.List<java.io.File> out) {
