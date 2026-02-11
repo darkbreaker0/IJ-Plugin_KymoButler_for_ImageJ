@@ -74,10 +74,8 @@ public class KymoButler_JSON_parser implements PlugIn{
 			+ "based on their <a href=\"https://doi.org/10.7554/eLife.42288\">publication</a> you should cite when using the website/plugin:<br><br>"
 			+ "This plugin heavily relies on external libraries that are packed in its jar file:"
 			+ "<ul>"
-			+ "	<li>commons-io, commons-io, v2.6</li>"
-			+ "	<li>org.apache.httpcomponents/httpclient, v4.5.9</li>"
-			+ "	<li>org.apache.httpcomponents/httpmime, v4.5.9</li>"
-			+ "	<li>org.json/json, v20180813</li>"
+			+ "	<li>commons-io, v2.17.0</li>"
+			+ "	<li>org.json/json, v20240303</li>"
 			+ "</ul>"
 			+ "<br><br>"
 			+ "The plugin is brought to you by F.P. Cordelières <a href=\"mailto:fabrice.cordelieres@gmail.com?subject=KymoButler for IJ\">fabrice.cordelieres@gmail.com</a>";
@@ -107,14 +105,9 @@ public class KymoButler_JSON_parser implements PlugIn{
 	 * @return true if all required libraries are installed, false otherwise
 	 */
 	public boolean checkForLibraries() {
-		String[] classesNames=new String[] {"commons-io-2.6.jar", "commons-logging-1.2.jar", "commons-codec-1.11.jar", "httpclient-4.5.9.jar", "httpcore-4.4.11.jar", "httpmime-4.5.9.jar", "json-20180813.jar"};
+		String[] classesNames=new String[] {"commons-io-2.17.0.jar", "json-20240303.jar"};
 		
 		String[] classesToFind=new String[] {"org.apache.commons.io.FileUtils",
-											 "org.apache.commons.logging.Log",
-											 "org.apache.commons.codec.Charsets",
-											 "org.apache.http.client.HttpClient",
-											 "org.apache.http.HttpEntity",
-											 "org.apache.http.entity.mime.HttpMultipartMode",
 											 "org.json.JSONObject"};
 		
 		String msg="";

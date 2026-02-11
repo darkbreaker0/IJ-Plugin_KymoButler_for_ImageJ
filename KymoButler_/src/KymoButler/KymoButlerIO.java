@@ -36,15 +36,6 @@ import java.util.concurrent.TimeUnit;
 import javax.imageio.ImageIO;
 
 import org.apache.commons.io.FileUtils;
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.mime.HttpMultipartMode;
-import org.apache.http.entity.mime.MultipartEntityBuilder;
-import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.util.EntityUtils;
-import org.json.JSONObject;
 
 import ij.IJ;
 import ij.ImagePlus;
@@ -121,15 +112,6 @@ public class KymoButlerIO{
 	
 	/** The server timout response (default: 2 minutes) **/
 	long timeOut=(long) Prefs.get("KymoButler_timeOut.double", 120000);
-	
-	/** The http POST request **/
-	HttpPost httpPost =null;
-	
-	/** The http response **/
-	HttpResponse response=null;
-	
-	/** The server response, as a JSON object containing the kymograph image, the overlay image and the tracks as a CSV formatted string **/
-	JSONObject result;
 	
 	/** Keeps track of the user pressing the escape key: will cancel all the process **/
 	boolean escPressed=false;
@@ -309,37 +291,7 @@ public class KymoButlerIO{
 	 * Legacy cloud statistics request.
 	 */
 	public String getStatisticsCloud() {
-		prepareRequestState();
-		MultipartEntityBuilder builder=MultipartEntityBuilder.create()
-				.setMode(HttpMultipartMode.BROWSER_COMPATIBLE)
-				.addTextBody(KymoButlerFields.QUERY_FIELD_TAG, KymoButlerFields.QUERY_STATS_FIELD_TAG);
-		HttpEntity multiPartEntity = builder.build();
-		
-		httpPost = new HttpPost(URL);
-		httpPost.setEntity(multiPartEntity);
-		
-		HttpClient client = HttpClientBuilder.create().build();
-		startTime=System.currentTimeMillis();
-		
-		showMessage();
-		
-		
-		try {
-			response=client.execute(httpPost);
-			
-			IJ.showStatus("Informations retrieved in "+getElapsedTime());
-			
-			String out=EntityUtils.toString(response.getEntity(), "UTF-8");
-			
-			httpPost.releaseConnection();
-			
-			return out;
-		
-		} catch (IOException e) {
-			IJ.log("Something went wrong while sending the request/getting the response to/from the server");
-			//e.printStackTrace();
-		}
-		return null;
+		return getStatistics();
 	}
 	
 	/**
@@ -355,41 +307,7 @@ public class KymoButlerIO{
 	 * Legacy cloud analysis request.
 	 */
 	public String getAnalysisResultsCloud() {
-		prepareRequestState();
-		MultipartEntityBuilder builder=MultipartEntityBuilder.create()
-				.setMode(HttpMultipartMode.BROWSER_COMPATIBLE)
-				.addTextBody(KymoButlerFields.QUERY_FIELD_TAG, KymoButlerFields.QUERY_ANALYSIS_FIELD_TAG)
-				.addBinaryBody(KymoButlerFields.KYMOGRAPH_FIELD_TAG, img)
-				.addTextBody(KymoButlerFields.THRESHOLD_FIELD_TAG, p)
-				.addTextBody(KymoButlerFields.MINIMUM_SIZE_FIELD_TAG, minimumSize)
-				.addTextBody(KymoButlerFields.MINIMUM_FRAMES_FIELD_TAG, minimumFrames);
-		HttpEntity multiPartEntity = builder.build();
-		
-		httpPost = new HttpPost(URL);
-		httpPost.setEntity(multiPartEntity);
-		
-		HttpClient client = HttpClientBuilder.create().build();
-		startTime=System.currentTimeMillis();
-		
-		showMessage();
-		
-		
-		try {
-			response=client.execute(httpPost);
-			
-			IJ.showStatus("Analysis performed in "+getElapsedTime());
-			
-			String out=EntityUtils.toString(response.getEntity(), "UTF-8");
-			
-			httpPost.releaseConnection();
-			
-			return out;
-		
-		} catch (IOException e) {
-			IJ.log("Something went wrong while sending the request/getting the response to/from the server");
-			//e.printStackTrace();
-		}
-		return null;
+		return getAnalysisResults();
 	}
 
 	/**
@@ -527,39 +445,7 @@ public class KymoButlerIO{
 	 * Legacy cloud upload request.
 	 */
 	public String uploadCloud() {
-		prepareRequestState();
-		MultipartEntityBuilder builder=MultipartEntityBuilder.create()
-				.setMode(HttpMultipartMode.BROWSER_COMPATIBLE)
-				.addTextBody(KymoButlerFields.QUERY_FIELD_TAG, KymoButlerFields.QUERY_UPLOAD_FIELD_TAG)
-				.addBinaryBody(KymoButlerFields.KYMOGRAPH_FIELD_TAG, img)
-				.addTextBody(KymoButlerFields.TRACKS_FIELD_TAG, tracks);
-		HttpEntity multiPartEntity = builder.build();
-		
-		httpPost = new HttpPost(URL);
-		httpPost.setEntity(multiPartEntity);
-		
-		HttpClient client = HttpClientBuilder.create().build();
-		startTime=System.currentTimeMillis();
-		
-		showMessage();
-		
-		
-		try {
-			response=client.execute(httpPost);
-			
-			IJ.showStatus("Upload performed in "+getElapsedTime());
-			
-			String out=EntityUtils.toString(response.getEntity(), "UTF-8");
-			
-			httpPost.releaseConnection();
-			
-			return out;
-		
-		} catch (IOException e) {
-			IJ.log("Something went wrong while sending the request/getting the response to/from the server");
-			//e.printStackTrace();
-		}
-		return null;
+		return upload();
 	}
 	
 	/**
@@ -576,52 +462,6 @@ public class KymoButlerIO{
 		}
 	}
 	
-	/**
-	 * This methods handles the display of the elapsed time in the status bar. It creates a new thread so that 
-	 * display does not interfere with the analysis process while allowing the display to be updated.
-	 */
-	private void showMessage() {
-		Thread t=new Thread() {
-			public void run() {
-				while(response==null && !escPressed && (System.currentTimeMillis()-startTime)<timeOut) {
-					
-					if(!IJ.escapePressed()) {
-						IJ.showStatus("Process started "+getElapsedTime()+" ago, waiting for response");
-					}else {
-						httpPost.abort();
-						IJ.showStatus("Process cancelled");
-						escPressed=true;
-					}
-					try {
-						Thread.sleep(250);
-					} catch (InterruptedException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					}
-			    }
-				
-				if((System.currentTimeMillis()-startTime)>timeOut)  httpPost.abort();
-			}
-		};
-		t.start();
-	}
-	
-	/**
-	 * Computes the elapsed time since the "startTime" as stored in the class variable
-	 * @return the elapsed time since startTime as a string, using the mm:ss format
-	 */
-	private String getElapsedTime() {
-		Date elapsedTime=new Date(System.currentTimeMillis()-startTime);
-		SimpleDateFormat sdf=new SimpleDateFormat("mm:ss");
-		return sdf.format(elapsedTime);
-	}
-
-	private void prepareRequestState() {
-		response=null;
-		escPressed=false;
-		IJ.resetEscape();
-	}
-
 	private void refreshLocalPrefs() {
 		useLocal=true;
 		Prefs.set("KymoButler_useLocal.boolean", true);
@@ -807,25 +647,8 @@ public class KymoButlerIO{
 	 * @return true if all required libraries are installed, false otherwise
 	 */
 	public static boolean checkForLibraries() {
-		/*
-		HashMap<String, String> classesToFind=new HashMap<String, String>(){
-			private static final long serialVersionUID = 1L;
-
-			{
-				put("commons-io-2.6", "org.apache.commons.io.FileUtils");
-				put("commons-logging-1.2", "org.apache.commons.logging.Log");
-				put("commons-codec-1.11", "org.apache.commons.codec.BinaryDecoder");
-				put("httpclient-4.5.9", "org.apache.http.client.HttpClient");
-				put("httpcore-4.4.11", "org.apache.http.HttpEntity");
-				put("httpmime-4.5.9", "org.apache.http.entity.mime.HttpMultipartMode");
-				put("json-20180813", "org.json.JSONObject");
-			}
-		};
-		*/
-		
 		String[][] jarCandidates = new String[][] {
 			{"commons-io-2.6.jar", "commons-io-2.17.0.jar"},
-			{"commons-logging-1.2.jar", "commons-logging-1.3.4.jar"},
 			{"json-20180813.jar", "json-20240303.jar"}
 		};
 		

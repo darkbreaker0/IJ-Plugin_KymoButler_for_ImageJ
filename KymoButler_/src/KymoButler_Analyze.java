@@ -127,9 +127,8 @@ public class KymoButler_Analyze implements PlugIn{
 			+ "based on their <a href=\"https://doi.org/10.7554/eLife.42288\">publication</a> you should cite when using the website/plugin:<br><br>"
 			+ "This plugin heavily relies on external libraries:"
 			+ "<ul>"
-			+ "	<li>commons-io, v2.6</li>"
-			+ "	<li>org.apache.httpcomponents/httpclient, v4.5.9</li>"
-			+ "	<li>org.json/json, v20180813</li>"
+			+ "	<li>commons-io, v2.17.0</li>"
+			+ "	<li>org.json/json, v20240303</li>"
 			+ "</ul>"
 			+ "<br><br>"
 			+ "The plugin is brought to you by F.P. Cordelières <a href=\"mailto:fabrice.cordelieres@gmail.com?subject=KymoButler for IJ\">fabrice.cordelieres@gmail.com</a>";

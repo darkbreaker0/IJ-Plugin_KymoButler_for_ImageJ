@@ -32,19 +32,16 @@ Download:
 
 ## Dependencies
 
-The plugin uses the following JARs. Fiji already ships newer versions in `Fiji.app/jars`, but the plugin checks legacy filenames in `plugins/jars`.
-
-Fiji already ships newer versions under `Fiji.app/jars` and the plugin now accepts those names. The following versions are known to work:
+This local-only plugin requires:
 
 - `commons-io-2.17.0.jar`
-- `commons-logging-1.3.4.jar`
-- `commons-codec-1.17.1.jar`
-- `httpclient-4.5.14.jar`
-- `httpcore-4.4.16.jar`
-- `httpmime-4.5.14.jar`
 - `json-20240303.jar`
 
-If you install to `Fiji.app/plugins/jars`, either the newer names above or the older legacy names will be accepted.
+Fiji already ships these (or compatible newer versions) in `Fiji.app/jars`.
+The plugin accepts both legacy names (for old installs) and current Fiji jar names in either:
+
+- `Fiji.app/jars`
+- `Fiji.app/plugins/jars`
 
 ## Build from source (Windows PowerShell)
 
@@ -61,11 +58,6 @@ New-Item -ItemType Directory -Force -Path $out | Out-Null
 $cp = @(
   "$imgj\jars\ij-1.53t.jar",
   "$imgj\jars\commons-io-2.17.0.jar",
-  "$imgj\jars\commons-logging-1.3.4.jar",
-  "$imgj\jars\commons-codec-1.17.1.jar",
-  "$imgj\jars\httpclient-4.5.14.jar",
-  "$imgj\jars\httpcore-4.4.16.jar",
-  "$imgj\jars\httpmime-4.5.14.jar",
   "$imgj\jars\json-20240303.jar"
 ) -join ";"
 
@@ -87,7 +79,7 @@ Restart Fiji after building.
 
 In Fiji, open `Plugins > KymoButler for ImageJ > Options`:
 
-- `Use_local_Wolfram_Engine` = checked
+- Local mode is always enabled
 - `WolframScript_path` = `wolframscript` or full path
 - `KymoButler_local_path` = folder containing `packages/KymoButler.wl`
 - `Local_output_directory` = base output folder (overridden by image folder if available)
